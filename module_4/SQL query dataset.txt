@@ -1,0 +1,68 @@
+WITH boarding AS 
+/* таблица с к-вом проданных мест на каждом рейсе */
+  (SELECT flight_id,
+          count(seat_no) AS seats_sold
+   FROM dst_project.boarding_passes
+   GROUP BY flight_id), 
+seats AS 
+/* таблица со списком моделей самолета и общим к-вом мест в салоне */
+  (SELECT aircraft_code,
+          count(seat_no) AS total_seats
+   FROM dst_project.seats
+   GROUP BY aircraft_code),
+economy_seats AS 
+/* таблица с к-вом проданных мест класса Эконом */
+  (SELECT f.flight_id,
+          f.aircraft_code,
+          s.fare_conditions,
+          count(b.seat_no) AS seats
+   FROM dst_project.boarding_passes b
+/* объединяем информацию по билетам, местам и номере рейса с кодом модели самолета */
+   LEFT JOIN dst_project.flights f ON b.flight_id = f.flight_id 
+/* объединяем с информацией о классе забронированного места */
+	LEFT JOIN dst_project.seats s ON f.aircraft_code = s.aircraft_code AND b.seat_no = s.seat_no
+   GROUP BY f.flight_id,
+            f.aircraft_code, 
+            s.fare_conditions
+   HAVING s.fare_conditions = 'Economy'), 
+economy_amount AS 
+/* таблица с выручкой от продажи билетов класса Эконом по каждому рейсу */
+  (SELECT flight_id,
+          sum(amount) amount
+   FROM dst_project.ticket_flights
+   GROUP BY flight_id, fare_conditions
+   HAVING fare_conditions = 'Economy'), 
+total_amount AS 
+/*таблица с общей выручкой от продажи билетов на рейсе*/
+  (SELECT flight_id,
+          sum(amount) amount
+   FROM dst_project.ticket_flights
+   GROUP BY flight_id)
+SELECT f.flight_id,
+       f.flight_no,
+       ap.city departure_city,
+       ap2.city arrival_city,
+       f.scheduled_departure,
+       boarding.seats_sold,
+       economy_seats.seats AS economy_sold,
+       (boarding.seats_sold - economy_seats.seats) AS business_sold,
+       seats.total_seats,
+       economy_amount.amount AS economy_value,
+       total_amount.amount AS total_value,
+       a.model,
+       extract(epoch FROM (f.actual_arrival - f.actual_departure)) / 60 AS flight_minutes
+FROM dst_project.flights f 
+/* объединяем с данными о аэропортах по городам для определения города отправки и города прилета по коду аэропорта.
+В первом случае объединяя по ключу “код аэропорта города отправки”, во втором - по ключу ”код аэропорта города прибытия” */
+	  LEFT JOIN dst_project.airports ap ON f.departure_airport = ap.airport_code
+	  LEFT JOIN dst_project.airports ap2 ON f.arrival_airport = ap2.airport_code
+	  LEFT JOIN boarding ON f.flight_id = boarding.flight_id -- соединяем с таблицей по к-ву проданных мест на рейсе
+	  LEFT JOIN economy_seats ON f.flight_id = economy_seats.flight_id AND f.aircraft_code = economy_seats.aircraft_code -- соединяем с таблицей по к-ву проданных мест класса эконом на рейсе
+	  LEFT JOIN seats ON f.aircraft_code = seats.aircraft_code -- соединяем с таблицей по общему к-ву мест в салоне самолета исходя из модели
+	  LEFT JOIN economy_amount ON f.flight_id = economy_amount.flight_id -- соединяем с таблицей с выручкой от продажи билетов класса эконом на каждом рейсе
+	  LEFT JOIN total_amount ON f.flight_id = total_amount.flight_id -- соединяем с таблицей с общей выручкой от продажи билетов на каждом рейсе
+	  LEFT JOIN dst_project.aircrafts a ON f.aircraft_code = a.aircraft_code -- соединяем с таблицей для вывода названия модели вместо кода
+/* фильтруем только рейсы из Анапы в выбранный промежуток времени - зима 2017 */
+WHERE f.departure_airport = 'AAQ'
+ AND (date_trunc('month', f.scheduled_departure) in ('2017-01-01','2017-02-01', '2016-12-01'))
+ AND f.status not in ('Cancelled')
