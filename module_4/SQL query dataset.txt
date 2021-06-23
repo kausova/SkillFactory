@@ -20,7 +20,7 @@ economy_seats AS
 /* объединяем информацию по билетам, местам и номере рейса с кодом модели самолета */
    LEFT JOIN dst_project.flights f ON b.flight_id = f.flight_id 
 /* объединяем с информацией о классе забронированного места */
-	LEFT JOIN dst_project.seats s ON f.aircraft_code = s.aircraft_code AND b.seat_no = s.seat_no
+   LEFT JOIN dst_project.seats s ON f.aircraft_code = s.aircraft_code AND b.seat_no = s.seat_no
    GROUP BY f.flight_id,
             f.aircraft_code, 
             s.fare_conditions
